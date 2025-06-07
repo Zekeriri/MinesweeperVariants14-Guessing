@@ -4,12 +4,11 @@ import keyboard
 import threading
 
 # ====== 日志开关 ======
-LOG_CLICK = False  # 改为 False 即可关闭所有点击日志
+LOG_CLICK = True  # 改为 False 即可关闭所有点击日志
 # =====================
 
 # ====== 线程监听 S 键强制退出 ======
 should_exit = False
-
 
 def listen_for_exit():
     global should_exit
@@ -20,11 +19,8 @@ def listen_for_exit():
             break
         time.sleep(0.05)
 
-
 exit_thread = threading.Thread(target=listen_for_exit, daemon=True)
 exit_thread.start()
-
-
 # ==================================
 
 def get_grid_centers(top_left, bottom_right, cols, rows):
@@ -40,22 +36,18 @@ def get_grid_centers(top_left, bottom_right, cols, rows):
             centers.append((x, y))
     return centers
 
-
 def check_fail_window(point):
     x, y = point
     color = pyautogui.pixel(x, y)
     return color != (0, 0, 0)
 
-
 def fast_click(x, y, button='left', delay_after=0.05, log_info=None):
-    """快速点击 - 可选日志"""
     if LOG_CLICK and log_info:
         print(f"[点击日志] {log_info}")
     pyautogui.mouseDown(x, y, button=button)
     pyautogui.mouseUp(x, y, button=button)
     if delay_after > 0:
         safe_sleep(delay_after)
-
 
 def replay_steps_fast(centers, steps, cols, click_delay=0.03):
     for idx, op in steps:
@@ -67,7 +59,6 @@ def replay_steps_fast(centers, steps, cols, click_delay=0.03):
         op_name = "左键" if op == "left" else "右键"
         log_info = f"回放步骤：第{row}行第{col}列 - {op_name}"
         fast_click(x, y, button=op, delay_after=click_delay, log_info=log_info)
-
 
 def format_time(seconds):
     if seconds < 60:
@@ -82,7 +73,6 @@ def format_time(seconds):
         secs = seconds % 60
         return f"{hours}小时{minutes}分{secs:.2f}秒"
 
-
 def safe_sleep(seconds):
     interval = 0.05
     elapsed = 0
@@ -91,7 +81,6 @@ def safe_sleep(seconds):
             break
         time.sleep(interval)
         elapsed += interval
-
 
 def main():
     # ====== 请根据实际情况修改以下参数 ======
@@ -136,8 +125,11 @@ def main():
     attempt_count = 0
     step_attempts = 0
 
+    tried_ops = set()  # 新增：记录所有已尝试的(格子,操作)
+
     while len(steps) < total and not should_exit:
         found = False
+        all_tried = True  # 用于检测是否还有未尝试的操作
         for idx in range(total):
             if should_exit:
                 break
@@ -146,6 +138,9 @@ def main():
             for op in ops:
                 if should_exit:
                     break
+                if (idx, op) in tried_ops:
+                    continue  # 该格子的该操作已经试过
+                all_tried = False  # 只要有一个没试过就不是全部尝试过
 
                 attempt_count += 1
                 step_attempts += 1
@@ -163,6 +158,8 @@ def main():
                            log_info=f"本次尝试：第{row}行第{col}列 - {op_name}")
 
                 safe_sleep(fail_check_delay)
+
+                tried_ops.add((idx, op))  # 记录本次尝试
 
                 if should_exit:
                     break
@@ -193,6 +190,9 @@ def main():
                     break
             if found or should_exit:
                 break
+        if all_tried:  # 如果所有操作都试过，仍未完成，直接结束
+            print("\n[日志] 所有格子的所有操作都已尝试，未能解开，脚本自动结束。")
+            break
 
     end_time = time.time()
     elapsed_time = end_time - start_time
@@ -200,6 +200,8 @@ def main():
     print("\n" + "=" * 60)
     if should_exit:
         print("⚠️  检测到 S 键，程序已终止。")
+    elif len(steps) < total:
+        print("❌ 未能解开机关，所有操作都已尝试。")
     else:
         print("🎉 全部操作完成！")
     print(f"开始时间：{time.strftime('%H:%M:%S', time.localtime(start_time))}")
@@ -225,7 +227,6 @@ def main():
 
     print(f"\n按任意键退出程序...")
     keyboard.read_event()
-
 
 if __name__ == "__main__":
     main()
