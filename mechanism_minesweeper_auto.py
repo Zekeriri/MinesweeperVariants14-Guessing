@@ -1,7 +1,23 @@
 import pyautogui
 import time
 import keyboard
+import threading
 
+# ====== 线程监听 S 键强制退出 ======
+should_exit = False
+
+def listen_for_exit():
+    global should_exit
+    while True:
+        if keyboard.is_pressed('s'):
+            should_exit = True
+            print("\n[日志] 检测到 S 键，准备终止脚本...")
+            break
+        time.sleep(0.05)
+
+exit_thread = threading.Thread(target=listen_for_exit, daemon=True)
+exit_thread.start()
+# ==================================
 
 def get_grid_centers(top_left, bottom_right, cols, rows):
     """计算每个格子的中心坐标"""
@@ -17,28 +33,26 @@ def get_grid_centers(top_left, bottom_right, cols, rows):
             centers.append((x, y))
     return centers
 
-
 def check_fail_window(point):
     """极速检测失败窗口：只要不是黑色就判定为失败"""
     x, y = point
     color = pyautogui.pixel(x, y)
     return color != (0, 0, 0)
 
-
 def fast_click(x, y, button='left', delay_after=0.05):
     """快速点击 - 加入适当延迟让游戏反应"""
     pyautogui.mouseDown(x, y, button=button)
     pyautogui.mouseUp(x, y, button=button)
     if delay_after > 0:
-        time.sleep(delay_after)  # 点击后等待游戏处理
-
+        safe_sleep(delay_after)
 
 def replay_steps_fast(centers, steps, click_delay=0.03):
     """快速回放 - 加入最小延迟"""
     for idx, op in steps:
+        if should_exit:
+            break
         x, y = centers[idx]
         fast_click(x, y, button=op, delay_after=click_delay)
-
 
 def format_time(seconds):
     """格式化时间显示"""
@@ -54,6 +68,15 @@ def format_time(seconds):
         secs = seconds % 60
         return f"{hours}小时{minutes}分{secs:.2f}秒"
 
+def safe_sleep(seconds):
+    """可被 S 键中断的 sleep"""
+    interval = 0.05
+    elapsed = 0
+    while elapsed < seconds:
+        if should_exit:
+            break
+        time.sleep(interval)
+        elapsed += interval
 
 def main():
     # ====== 请根据实际情况修改以下参数 ======
@@ -69,9 +92,9 @@ def main():
     reset_y = 811  # 重置按钮y
 
     # 性能调优参数
-    click_delay = 0.05  # 每次点击后的延迟（秒）
-    replay_delay = 0.03  # 回放时每步的延迟（秒）
-    reset_wait = 0.1  # 重置后的等待时间（秒）
+    click_delay = 1    # 每次点击后的延迟（秒）
+    replay_delay = 1   # 回放时每步的延迟（秒）
+    reset_wait = 1     # 重置后的等待时间（秒）
     fail_check_delay = 0.05  # 检查失败窗口前的等待时间（秒）
     # =========================================
 
@@ -81,8 +104,11 @@ def main():
     print("\n=== 机关扫雷智能穷举脚本（详细日志模式） ===")
     print("请切换到机关扫雷界面，3秒后自动开始！（按 S 可随时终止）")
     for i in range(3, 0, -1):
+        if should_exit:
+            print("\n检测到 S 键，程序终止。")
+            return
         print(f"{i}...")
-        time.sleep(1)
+        safe_sleep(1)
 
     start_time = time.time()
     print(f"\n开始时间：{time.strftime('%H:%M:%S', time.localtime(start_time))}")
@@ -96,20 +122,16 @@ def main():
     attempt_count = 0
     step_attempts = 0
 
-    while len(steps) < total:
+    while len(steps) < total and not should_exit:
         found = False
         for idx in range(total):
+            if should_exit:
+                break
             if idx in used:
                 continue
             for op in ops:
-                if keyboard.is_pressed('s'):
-                    end_time = time.time()
-                    elapsed_time = end_time - start_time
-                    print(f"\n检测到 S 键，程序终止。")
-                    print(f"运行时间：{format_time(elapsed_time)}")
-                    print(f"总尝试次数：{attempt_count}")
-                    print(f"已完成步骤：{len(steps)}/{total}")
-                    return
+                if should_exit:
+                    break
 
                 attempt_count += 1
                 step_attempts += 1
@@ -127,7 +149,10 @@ def main():
                 x, y = centers[idx]
                 fast_click(x, y, button=op, delay_after=click_delay)
 
-                time.sleep(fail_check_delay)
+                safe_sleep(fail_check_delay)
+
+                if should_exit:
+                    break
 
                 if check_fail_window((fail_x, fail_y)):
                     print(f"[日志] 失败！检测到失败窗口，准备重置...")
@@ -135,6 +160,8 @@ def main():
                     # 等待窗口完全关闭
                     wait_cnt = 0
                     while check_fail_window((fail_x, fail_y)):
+                        if should_exit:
+                            break
                         time.sleep(0.01)
                         wait_cnt += 1
                         if wait_cnt > 100:
@@ -152,7 +179,7 @@ def main():
                     step_attempts = 0
                     found = True
                     break
-            if found:
+            if found or should_exit:
                 break
 
     # 结束计时
@@ -160,13 +187,16 @@ def main():
     elapsed_time = end_time - start_time
 
     print("\n" + "=" * 60)
-    print("🎉 全部操作完成！")
+    if should_exit:
+        print("⚠️  检测到 S 键，程序已终止。")
+    else:
+        print("🎉 全部操作完成！")
     print(f"开始时间：{time.strftime('%H:%M:%S', time.localtime(start_time))}")
     print(f"结束时间：{time.strftime('%H:%M:%S', time.localtime(end_time))}")
     print(f"总用时：{format_time(elapsed_time)}")
     print(f"总尝试次数：{attempt_count}")
-    print(f"平均每步用时：{format_time(elapsed_time / total)}")
-    print(f"平均每步尝试次数：{attempt_count / total:.1f}")
+    print(f"平均每步用时：{format_time(elapsed_time / (len(steps) if steps else 1))}")
+    print(f"平均每步尝试次数：{attempt_count / (len(steps) if steps else 1):.1f}")
     print("=" * 60)
 
     print("\n📋 完整操作序列：")
@@ -184,8 +214,6 @@ def main():
 
     print(f"\n按任意键退出程序...")
     keyboard.read_event()
-
-
 
 if __name__ == "__main__":
     main()
