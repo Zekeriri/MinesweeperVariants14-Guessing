@@ -3,8 +3,13 @@ import time
 import keyboard
 import threading
 
+# ====== 日志开关 ======
+LOG_CLICK = False  # 改为 False 即可关闭所有点击日志
+# =====================
+
 # ====== 线程监听 S 键强制退出 ======
 should_exit = False
+
 
 def listen_for_exit():
     global should_exit
@@ -15,12 +20,14 @@ def listen_for_exit():
             break
         time.sleep(0.05)
 
+
 exit_thread = threading.Thread(target=listen_for_exit, daemon=True)
 exit_thread.start()
+
+
 # ==================================
 
 def get_grid_centers(top_left, bottom_right, cols, rows):
-    """计算每个格子的中心坐标"""
     x0, y0 = top_left
     x1, y1 = bottom_right
     cell_width = (x1 - x0) / cols
@@ -33,29 +40,36 @@ def get_grid_centers(top_left, bottom_right, cols, rows):
             centers.append((x, y))
     return centers
 
+
 def check_fail_window(point):
-    """极速检测失败窗口：只要不是黑色就判定为失败"""
     x, y = point
     color = pyautogui.pixel(x, y)
     return color != (0, 0, 0)
 
-def fast_click(x, y, button='left', delay_after=0.05):
-    """快速点击 - 加入适当延迟让游戏反应"""
+
+def fast_click(x, y, button='left', delay_after=0.05, log_info=None):
+    """快速点击 - 可选日志"""
+    if LOG_CLICK and log_info:
+        print(f"[点击日志] {log_info}")
     pyautogui.mouseDown(x, y, button=button)
     pyautogui.mouseUp(x, y, button=button)
     if delay_after > 0:
         safe_sleep(delay_after)
 
-def replay_steps_fast(centers, steps, click_delay=0.03):
-    """快速回放 - 加入最小延迟"""
+
+def replay_steps_fast(centers, steps, cols, click_delay=0.03):
     for idx, op in steps:
         if should_exit:
             break
         x, y = centers[idx]
-        fast_click(x, y, button=op, delay_after=click_delay)
+        row = idx // cols + 1
+        col = idx % cols + 1
+        op_name = "左键" if op == "left" else "右键"
+        log_info = f"回放步骤：第{row}行第{col}列 - {op_name}"
+        fast_click(x, y, button=op, delay_after=click_delay, log_info=log_info)
+
 
 def format_time(seconds):
-    """格式化时间显示"""
     if seconds < 60:
         return f"{seconds:.2f}秒"
     elif seconds < 3600:
@@ -68,8 +82,8 @@ def format_time(seconds):
         secs = seconds % 60
         return f"{hours}小时{minutes}分{secs:.2f}秒"
 
+
 def safe_sleep(seconds):
-    """可被 S 键中断的 sleep"""
     interval = 0.05
     elapsed = 0
     while elapsed < seconds:
@@ -78,24 +92,24 @@ def safe_sleep(seconds):
         time.sleep(interval)
         elapsed += interval
 
+
 def main():
     # ====== 请根据实际情况修改以下参数 ======
-    x0 = 744  # 左上角x
-    y0 = 377  # 左上角y
-    x1 = 1176  # 右下角x
-    y1 = 809  # 右下角y
-    cols = 5  # 列数
-    rows = 5  # 行数
-    fail_x = 1648  # 检查失败窗口的x
-    fail_y = 229  # 检查失败窗口的y
-    reset_x = 1335  # 重置按钮x
-    reset_y = 811  # 重置按钮y
+    x0 = 744
+    y0 = 377
+    x1 = 1176
+    y1 = 809
+    cols = 5
+    rows = 5
+    fail_x = 1648
+    fail_y = 229
+    reset_x = 1335
+    reset_y = 811
 
-    # 性能调优参数
-    click_delay = 1    # 每次点击后的延迟（秒）
-    replay_delay = 1   # 回放时每步的延迟（秒）
-    reset_wait = 1     # 重置后的等待时间（秒）
-    fail_check_delay = 0.05  # 检查失败窗口前的等待时间（秒）
+    click_delay = 0.05
+    replay_delay = 0.03
+    reset_wait = 0.1
+    fail_check_delay = 0.05
     # =========================================
 
     pyautogui.PAUSE = 0
@@ -136,18 +150,17 @@ def main():
                 attempt_count += 1
                 step_attempts += 1
 
-                # 日志：准备回放
                 print(f"\n[日志] 第{attempt_count}次尝试：回放已知步骤...")
-                replay_steps_fast(centers, steps, replay_delay)
+                replay_steps_fast(centers, steps, cols, replay_delay)
 
-                # 日志：尝试当前格子
                 row = idx // cols + 1
                 col = idx % cols + 1
                 op_name = "左键" if op == "left" else "右键"
                 print(f"[日志] 尝试第{row}行第{col}列 - {op_name}")
 
                 x, y = centers[idx]
-                fast_click(x, y, button=op, delay_after=click_delay)
+                fast_click(x, y, button=op, delay_after=click_delay,
+                           log_info=f"本次尝试：第{row}行第{col}列 - {op_name}")
 
                 safe_sleep(fail_check_delay)
 
@@ -156,8 +169,7 @@ def main():
 
                 if check_fail_window((fail_x, fail_y)):
                     print(f"[日志] 失败！检测到失败窗口，准备重置...")
-                    fast_click(reset_x, reset_y, delay_after=reset_wait)
-                    # 等待窗口完全关闭
+                    fast_click(reset_x, reset_y, delay_after=reset_wait, log_info="点击重置按钮")
                     wait_cnt = 0
                     while check_fail_window((fail_x, fail_y)):
                         if should_exit:
@@ -182,7 +194,6 @@ def main():
             if found or should_exit:
                 break
 
-    # 结束计时
     end_time = time.time()
     elapsed_time = end_time - start_time
 
@@ -214,6 +225,7 @@ def main():
 
     print(f"\n按任意键退出程序...")
     keyboard.read_event()
+
 
 if __name__ == "__main__":
     main()
