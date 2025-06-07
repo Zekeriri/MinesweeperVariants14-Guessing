@@ -10,6 +10,7 @@ LOG_CLICK = True  # 改为 False 即可关闭所有点击日志
 # ====== 线程监听 S 键强制退出 ======
 should_exit = False
 
+
 def listen_for_exit():
     global should_exit
     while True:
@@ -19,8 +20,11 @@ def listen_for_exit():
             break
         time.sleep(0.05)
 
+
 exit_thread = threading.Thread(target=listen_for_exit, daemon=True)
 exit_thread.start()
+
+
 # ==================================
 
 def get_grid_centers(top_left, bottom_right, cols, rows):
@@ -36,10 +40,12 @@ def get_grid_centers(top_left, bottom_right, cols, rows):
             centers.append((x, y))
     return centers
 
+
 def check_fail_window(point):
     x, y = point
     color = pyautogui.pixel(x, y)
     return color != (0, 0, 0)
+
 
 def fast_click(x, y, button='left', delay_after=0.05, log_info=None):
     if LOG_CLICK and log_info:
@@ -48,6 +54,7 @@ def fast_click(x, y, button='left', delay_after=0.05, log_info=None):
     pyautogui.mouseUp(x, y, button=button)
     if delay_after > 0:
         safe_sleep(delay_after)
+
 
 def replay_steps_fast(centers, steps, cols, click_delay=0.03):
     for idx, op in steps:
@@ -59,6 +66,7 @@ def replay_steps_fast(centers, steps, cols, click_delay=0.03):
         op_name = "左键" if op == "left" else "右键"
         log_info = f"回放步骤：第{row}行第{col}列 - {op_name}"
         fast_click(x, y, button=op, delay_after=click_delay, log_info=log_info)
+
 
 def format_time(seconds):
     if seconds < 60:
@@ -73,6 +81,7 @@ def format_time(seconds):
         secs = seconds % 60
         return f"{hours}小时{minutes}分{secs:.2f}秒"
 
+
 def safe_sleep(seconds):
     interval = 0.05
     elapsed = 0
@@ -81,6 +90,7 @@ def safe_sleep(seconds):
             break
         time.sleep(interval)
         elapsed += interval
+
 
 def main():
     # ====== 请根据实际情况修改以下参数 ======
@@ -124,12 +134,18 @@ def main():
     used = set()
     attempt_count = 0
     step_attempts = 0
-
-    tried_ops = set()  # 新增：记录所有已尝试的(格子,操作)
+    tried_ops = set()
+    need_replay = False  # 新增：是否需要回放步骤的标志
 
     while len(steps) < total and not should_exit:
+        # 只在需要时回放步骤（重置后）
+        if need_replay:
+            print(f"\n[日志] 重置后需要回放{len(steps)}步...")
+            replay_steps_fast(centers, steps, cols, replay_delay)
+            need_replay = False
+
         found = False
-        all_tried = True  # 用于检测是否还有未尝试的操作
+        all_tried = True
         for idx in range(total):
             if should_exit:
                 break
@@ -139,27 +155,25 @@ def main():
                 if should_exit:
                     break
                 if (idx, op) in tried_ops:
-                    continue  # 该格子的该操作已经试过
-                all_tried = False  # 只要有一个没试过就不是全部尝试过
+                    continue
+                all_tried = False
 
                 attempt_count += 1
                 step_attempts += 1
 
-                print(f"\n[日志] 第{attempt_count}次尝试：回放已知步骤...")
-                replay_steps_fast(centers, steps, cols, replay_delay)
-
                 row = idx // cols + 1
                 col = idx % cols + 1
                 op_name = "左键" if op == "left" else "右键"
-                print(f"[日志] 尝试第{row}行第{col}列 - {op_name}")
+                print(f"[日志] 尝试第{row}行第{col}列 - {op_name} (总第{attempt_count}次尝试)")
 
+                # 直接点击当前格子（不先回放所有步骤）
                 x, y = centers[idx]
                 fast_click(x, y, button=op, delay_after=click_delay,
                            log_info=f"本次尝试：第{row}行第{col}列 - {op_name}")
 
                 safe_sleep(fail_check_delay)
 
-                tried_ops.add((idx, op))  # 记录本次尝试
+                tried_ops.add((idx, op))
 
                 if should_exit:
                     break
@@ -177,7 +191,8 @@ def main():
                             print("[警告] 失败窗口长时间未关闭，可能出现异常。")
                             break
                     print(f"[日志] 重置完成，继续下一次尝试。")
-                    continue
+                    need_replay = True  # 标记需要回放
+                    break  # 跳出操作循环
                 else:
                     current_time = time.time()
                     elapsed_time = current_time - start_time
@@ -187,10 +202,10 @@ def main():
                     used.add(idx)
                     step_attempts = 0
                     found = True
-                    break
-            if found or should_exit:
-                break
-        if all_tried:  # 如果所有操作都试过，仍未完成，直接结束
+                    break  # 跳出操作循环
+            if found or need_replay or should_exit:
+                break  # 跳出格子循环
+        if all_tried:
             print("\n[日志] 所有格子的所有操作都已尝试，未能解开，脚本自动结束。")
             break
 
@@ -227,6 +242,7 @@ def main():
 
     print(f"\n按任意键退出程序...")
     keyboard.read_event()
+
 
 if __name__ == "__main__":
     main()
