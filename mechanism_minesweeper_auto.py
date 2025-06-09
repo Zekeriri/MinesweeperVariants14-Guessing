@@ -3,11 +3,8 @@ import time
 import keyboard
 import threading
 
-# ====== 日志开关 ======
-LOG_CLICK = True  # 改为 False 即可关闭所有点击日志
-# =====================
+LOG_CLICK = True  # 日志开关
 
-# ====== 线程监听 S 键强制退出 ======
 should_exit = False
 
 
@@ -24,8 +21,6 @@ def listen_for_exit():
 exit_thread = threading.Thread(target=listen_for_exit, daemon=True)
 exit_thread.start()
 
-
-# ==================================
 
 def get_grid_centers(top_left, bottom_right, cols, rows):
     x0, y0 = top_left
@@ -45,6 +40,11 @@ def check_fail_window(point):
     x, y = point
     color = pyautogui.pixel(x, y)
     return color != (0, 0, 0)
+
+
+def check_win_point(win_x, win_y, win_color=(255, 255, 0)):
+    color = pyautogui.pixel(win_x, win_y)
+    return color == win_color
 
 
 def fast_click(x, y, button='left', delay_after=0.05, log_info=None):
@@ -92,58 +92,23 @@ def safe_sleep(seconds):
         elapsed += interval
 
 
-def main():
-    # ====== 请根据实际情况修改以下参数 ======
-    x0 = 744
-    y0 = 377
-    x1 = 1176
-    y1 = 809
-    cols = 5
-    rows = 5
-    fail_x = 1648
-    fail_y = 229
-    reset_x = 1335
-    reset_y = 811
-
-    click_delay = 0.05
-    replay_delay = 0.03
-    reset_wait = 0.1
-    fail_check_delay = 0.05
-    # =========================================
-
-    pyautogui.PAUSE = 0
-    pyautogui.FAILSAFE = False
-
-    print("\n=== 14种扫雷变体试错法脚本（详细日志模式） ===")
-    print("请切换到14种扫雷变体界面，3秒后自动开始！（按 S 可随时终止）")
-    for i in range(3, 0, -1):
-        if should_exit:
-            print("\n检测到 S 键，程序终止。")
-            return
-        print(f"{i}...")
-        safe_sleep(1)
-
-    start_time = time.time()
-    print(f"\n开始时间：{time.strftime('%H:%M:%S', time.localtime(start_time))}")
-    print("开始智能穷举...")
-
-    centers = get_grid_centers((x0, y0), (x1, y1), cols, rows)
-    ops = ['left', 'right']
-    total = len(centers)
+def single_level_solve(centers, cols, total, fail_x, fail_y, reset_x, reset_y, click_delay, replay_delay, reset_wait,
+                       fail_check_delay, win_x, win_y, next_button_x, next_button_y):
     steps = []
     used = set()
-    attempt_count = 0
-    step_attempts = 0
     tried_ops = set()
-    need_replay = False  # 新增：是否需要回放步骤的标志
+    step_attempts = 0
+    attempt_count = 0
+    need_replay = False
 
-    while len(steps) < total and not should_exit:
-        # 只在需要时回放步骤（重置后）
+    level_start_time = time.time()
+    while not should_exit:
+        if len(steps) >= total:
+            break
         if need_replay:
             print(f"\n[日志] 重置后需要回放{len(steps)}步...")
             replay_steps_fast(centers, steps, cols, replay_delay)
             need_replay = False
-
         found = False
         all_tried = True
         for idx in range(total):
@@ -151,38 +116,29 @@ def main():
                 break
             if idx in used:
                 continue
-            for op in ops:
+            for op in ['left', 'right']:
                 if should_exit:
                     break
                 if (idx, op) in tried_ops:
                     continue
                 all_tried = False
-
                 attempt_count += 1
                 step_attempts += 1
-
                 row = idx // cols + 1
                 col = idx % cols + 1
                 op_name = "左键" if op == "left" else "右键"
-                print(f"[日志] 尝试第{row}行第{col}列 - {op_name} (总第{attempt_count}次尝试)")
-
-                # 直接点击当前格子（不先回放所有步骤）
+                print(f"[日志] 尝试第{row}行第{col}列 - {op_name} (本关第{attempt_count}次尝试)")
                 x, y = centers[idx]
                 fast_click(x, y, button=op, delay_after=click_delay,
                            log_info=f"本次尝试：第{row}行第{col}列 - {op_name}")
-
                 safe_sleep(fail_check_delay)
-
                 tried_ops.add((idx, op))
-
                 if should_exit:
                     break
-
                 if check_fail_window((fail_x, fail_y)):
                     print(f"[日志] 失败！检测到失败窗口，准备重置...")
                     fast_click(reset_x, reset_y, delay_after=reset_wait, log_info="点击重置按钮")
-                    # 重置后鼠标移到中心位置（解决重置后第一次点击无效）
-                    center_x, center_y = centers[total//2]
+                    center_x, center_y = centers[total // 2]
                     pyautogui.moveTo(center_x, center_y)
                     wait_cnt = 0
                     while check_fail_window((fail_x, fail_y)):
@@ -194,56 +150,97 @@ def main():
                             print("[警告] 失败窗口长时间未关闭，可能出现异常。")
                             break
                     print(f"[日志] 重置完成，继续下一次尝试。")
-                    need_replay = True  # 标记需要回放
-                    break  # 跳出操作循环
+                    need_replay = True
+                    break
                 else:
                     current_time = time.time()
-                    elapsed_time = current_time - start_time
+                    elapsed_time = current_time - level_start_time
                     print(
-                        f"[日志] ✓ 成功！第{len(steps) + 1}步：第{row}行第{col}列-{op_name} (本步尝试{step_attempts}次, 总用时{format_time(elapsed_time)})")
+                        f"[日志] ✓ 成功！第{len(steps) + 1}步：第{row}行第{col}列-{op_name} (本步尝试{step_attempts}次, 本关用时{format_time(elapsed_time)})")
                     steps.append((idx, op))
                     used.add(idx)
                     tried_ops.clear()
                     step_attempts = 0
                     found = True
-                    break  # 跳出操作循环
+                    # ===== 检查通关点颜色，若已通关则返回 =====
+                    if check_win_point(win_x, win_y):
+                        print(f"[日志] 检测到通关颜色 (255,255,0)，点击通关点并进入下一关！")
+                        pyautogui.click(win_x, win_y)
+                        safe_sleep(0.5)
+                        pyautogui.click(next_button_x, next_button_y)
+                        safe_sleep(0.5)
+                        return steps, attempt_count, time.time() - level_start_time
+                    break
             if found or need_replay or should_exit:
-                break  # 跳出格子循环
+                break
         if all_tried:
-            print("\n[日志] 所有格子的所有操作都已尝试，未能解开，脚本自动结束。")
+            print("\n[日志] 所有格子的所有操作都已尝试，未能解开，脚本自动结束本关。")
             break
+    return steps, attempt_count, time.time() - level_start_time
 
-    end_time = time.time()
-    elapsed_time = end_time - start_time
 
+def main():
+    # ====== 参数设置 ======
+    x0 = 744
+    y0 = 377
+    x1 = 1176
+    y1 = 809
+    cols = 5
+    rows = 5
+    fail_x = 1648
+    fail_y = 229    # 右上角的×
+    reset_x = 1335
+    reset_y = 811
+    win_x = 1500  # 通关检测点x
+    win_y = 65  # 通关检测点y    黄色的⏩或✅
+    next_button_x = 1024
+    next_button_y = 820 # 下一关按钮位置
+
+    click_delay = 0.05
+    replay_delay = 0.03
+    reset_wait = 0.1
+    fail_check_delay = 0.05
+    total_levels = 100  # ====== 需要连续通关的关数 ======
+    # ====================
+
+    pyautogui.PAUSE = 0
+    pyautogui.FAILSAFE = False
+
+    print("\n=== 14种扫雷变体试错法脚本（多关自动模式） ===")
+    print(f"将自动连续通关 {total_levels} 关！请切换到游戏界面，3秒后自动开始！（按 S 可随时终止）")
+    for i in range(3, 0, -1):
+        if should_exit:
+            print("\n检测到 S 键，程序终止。")
+            return
+        print(f"{i}...")
+        safe_sleep(1)
+
+    all_level_info = []
+    total_start_time = time.time()
+    centers = get_grid_centers((x0, y0), (x1, y1), cols, rows)
+    total = len(centers)
+
+    for level in range(1, total_levels + 1):
+        if should_exit:
+            break
+        print(f"\n{'=' * 30}\n[关卡] 第 {level} 关开始\n{'=' * 30}")
+        steps, attempts, used_time = single_level_solve(
+            centers, cols, total, fail_x, fail_y, reset_x, reset_y,
+            click_delay, replay_delay, reset_wait, fail_check_delay,
+            win_x, win_y, next_button_x, next_button_y)
+        all_level_info.append((steps, attempts, used_time))
+        if should_exit:
+            print(f"\n[日志] 检测到 S 键，提前退出")
+            break
+        print(f"\n[关卡] 第 {level} 关完成！用时：{format_time(used_time)}，尝试次数：{attempts}，步数：{len(steps)}")
+        safe_sleep(2)  # 每关之间可适当等待
+
+    total_end_time = time.time()
     print("\n" + "=" * 60)
-    if should_exit:
-        print("⚠️  检测到 S 键，程序已终止。")
-    elif len(steps) < total:
-        print("❌ 未能解开机关，所有操作都已尝试。")
-    else:
-        print("🎉 全部操作完成！")
-    print(f"开始时间：{time.strftime('%H:%M:%S', time.localtime(start_time))}")
-    print(f"结束时间：{time.strftime('%H:%M:%S', time.localtime(end_time))}")
-    print(f"总用时：{format_time(elapsed_time)}")
-    print(f"总尝试次数：{attempt_count}")
-    print(f"平均每步用时：{format_time(elapsed_time / (len(steps) if steps else 1))}")
-    print(f"平均每步尝试次数：{attempt_count / (len(steps) if steps else 1):.1f}")
+    print(f"全部关卡已完成或中断，总用时：{format_time(total_end_time - total_start_time)}")
+    for i, (steps, attempts, used_time) in enumerate(all_level_info, 1):
+        print(f"\n【第{i}关】用时：{format_time(used_time)}，尝试次数：{attempts}，步数：{len(steps)}")
     print("=" * 60)
-
-    print("\n📋 完整操作序列：")
-    for i, (idx, op) in enumerate(steps, 1):
-        row = idx // cols + 1
-        col = idx % cols + 1
-        op_name = "左键" if op == "left" else "右键"
-        print(f"第{i:2d}步：第{row}行第{col}列 - {op_name}")
-
-    print(f"\n🔧 性能参数设置：")
-    print(f"   点击延迟：{click_delay}秒")
-    print(f"   回放延迟：{replay_delay}秒")
-    print(f"   重置等待：{reset_wait}秒")
-    print(f"   失败检查延迟：{fail_check_delay}秒")
-
     print(f"\n按任意键退出程序...")
     keyboard.read_event()
 
