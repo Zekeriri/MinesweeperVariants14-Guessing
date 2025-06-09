@@ -200,6 +200,7 @@ def main():
                         f"[日志] ✓ 成功！第{len(steps) + 1}步：第{row}行第{col}列-{op_name} (本步尝试{step_attempts}次, 总用时{format_time(elapsed_time)})")
                     steps.append((idx, op))
                     used.add(idx)
+                    tried_ops.clear()
                     step_attempts = 0
                     found = True
                     break  # 跳出操作循环
