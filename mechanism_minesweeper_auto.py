@@ -114,8 +114,8 @@ def main():
     pyautogui.PAUSE = 0
     pyautogui.FAILSAFE = False
 
-    print("\n=== 机关扫雷智能穷举脚本（详细日志模式） ===")
-    print("请切换到机关扫雷界面，3秒后自动开始！（按 S 可随时终止）")
+    print("\n=== 14种扫雷变体试错法脚本（详细日志模式） ===")
+    print("请切换到14种扫雷变体界面，3秒后自动开始！（按 S 可随时终止）")
     for i in range(3, 0, -1):
         if should_exit:
             print("\n检测到 S 键，程序终止。")
