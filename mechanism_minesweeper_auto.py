@@ -181,6 +181,9 @@ def main():
                 if check_fail_window((fail_x, fail_y)):
                     print(f"[日志] 失败！检测到失败窗口，准备重置...")
                     fast_click(reset_x, reset_y, delay_after=reset_wait, log_info="点击重置按钮")
+                    # 重置后鼠标移到中心位置（解决重置后第一次点击无效）
+                    center_x, center_y = centers[total//2]
+                    pyautogui.moveTo(center_x, center_y)
                     wait_cnt = 0
                     while check_fail_window((fail_x, fail_y)):
                         if should_exit:
